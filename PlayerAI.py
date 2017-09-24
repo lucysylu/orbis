@@ -26,6 +26,11 @@ class PlayerAI:
         self.nest_core_importance = 0.5
         self.target_nests = {}
         self.defense_points = {}
+        self.builder_count = 0
+        self.nest_build_point;
+        self.straight_builders = []
+        self.zz_builders = []
+        self.steps = 0;
 
     def check_walls(self, world):
 
@@ -58,7 +63,7 @@ class PlayerAI:
         else: return False
 
 
-    def is_mid(self, world):
+    def is_past_mid(self, world):
         #checks if a third of tiles are taken or if enemy gets close to nests
         x = world.get_width()
         y = world.get_height()
@@ -173,7 +178,62 @@ class PlayerAI:
             self.defense_points[friendly_nest_position] = [northwestern_point, northeastern_point, southwestern_point,
                                                            southeastern_point]
 
+    def builder_scout_two(self, world, unit):
 
+
+
+    def zz_move(self, world, unit, goal):
+        next = world.get_next_point_in_shortest_path(unit.position, goal)
+        if next[0] < unit.position[0]:
+            a = -1
+        elif next[0] > unit.position[0]:
+            a = 1
+        else: a = 0
+
+        if next[1] < unit.position[1]:
+            b = -1
+        elif next[1] > unit.position[1]:
+            b = 1
+        else:
+            b = 0
+
+        if steps == 0:
+            world.move(unit, next)
+        elif steps == 1:
+            world.move(unit, ())
+
+
+
+
+
+    def scout_move(self, world, unit):
+
+        nests = world.get_friendly_nest_positions()
+        if not self.is_past_mid:
+            if len(nests) < self.goal_nests and self.builder_count < self.goal_nests:
+                self.builder_count += 1
+                builder_scout(world, unit)
+            else:
+
+
+    def find_build_point(self, world, unit):
+        best_nests = self.obtain_best_nest_points()
+        closest = world.get_closest_point_from(unit.position, lambda nest: nest in best_nests)
+        return closest
+
+    def find_friendlies(self, world, friendly_units):
+        #return a set of friendly positions
+        friendly_pos = set()
+        for unit in friendly_units:
+            friendly_pos.add(unit.position)
+        return friendly_pos
+
+    def find_enemies(self, world, enemy_units):
+        #return a set of enemy positions
+        enemy_pos = set()
+        for unit in enemy_units:
+            enemy_pos.add(unit.position)
+        return enemy_pos
 
     def do_move(self, world, friendly_units, enemy_units):
         """
@@ -193,11 +253,12 @@ class PlayerAI:
                                            world.get_closest_capturable_tile_from(unit.position, None).position,
                                            None)
             #assign a new firefly to a role
+
             if unit.uuid not in self.spawned:
                 #TODO: Add code for checking if merged
-                if (self.is_early_game and self.move_count % 2 == 0):
+                if (not self.is_past_mid and self.move_count % 2 == 0):
                     self.scouts.append(unit.uuid)
-                elif (not self.is_early_game and self.move_count % 2 == 0):
+                elif (self.is_past_mid and self.move_count % 2 == 0):
                     self.hunters.append(unit.uuid)
                 else:
                     self.defenders.append(unit.uuid)
@@ -207,6 +268,18 @@ class PlayerAI:
                 if unit.uuid in self.hunters:
 
                 elif unit.uuid in self.scouts:
+                    if not self.build_nest_point:
+                        self.build_nest_point = self.find_build_point(unit)
+                    if unit.uuid not in (self.straight_builders or self.zz_builders):
+                        if self.move_count % 3 == 0:
+                            self.straight_builders.append(unit.uuid)
+                        elif move_count % 3 == 1 or move_count % 3 == 2:
+                            self.zz_builders.append(unit.uuid)
+                    if self.build_nest_point:
+
+                    if unit.uuid in self.straight_builders:
+                        world.move(world.get_next_point_in_shortest_path(unit.position, build_next_point))
+
 
                 elif unit.uuid in self.defenders:
 
