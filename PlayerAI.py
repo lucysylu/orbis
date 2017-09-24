@@ -325,7 +325,6 @@ class PlayerAI:
 
                 del self.scouts[:len(self.scouts)//2]
 
-
         for unit in friendly_units:
             if unit.last_move_result == MoveResult.NEWLY_MERGED:
                 parents = []
