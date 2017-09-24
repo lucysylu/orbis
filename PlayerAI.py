@@ -30,10 +30,11 @@ class PlayerAI:
         self.nest_build_point;
         self.straight_builders = []
         self.zz_builders = []
-        self.steps = 0;
+        self.steps = 0
+        self.defender_mapping = {}
+        self.defender_enemy_attack_threshold = 5
 
     def check_walls(self, world):
-
         #check type of map, find nesting cores
         x = world.get_width()
         y = world.get_height()
@@ -175,11 +176,73 @@ class PlayerAI:
             southwestern_point = self.get_southwestern_point(world, friendly_nest_position, neighbors)
             southeastern_point = self.get_southeastern_point(world, friendly_nest_position, neighbors)
 
-            self.defense_points[friendly_nest_position] = [northwestern_point, northeastern_point, southwestern_point,
-                                                           southeastern_point]
+            self.defense_points[friendly_nest_position] = {
+                northwestern_point:None,
+                northeastern_point:None,
+                southwestern_point:None,
+                southeastern_point:None
+            }
 
-    def builder_scout_two(self, world, unit):
+    def get_closest_friendly_nests(self, world, point):
+        friendly_nest_positions = world.get_friendly_nest_positions()
+        friendly_nest_tuples = []
+        for position in friendly_nest_positions:
+            dist = world.get_shortest_path_distance(point, position)
+            friendly_nest_tuples.append((position, dist))
 
+        friendly_nest_tuples = sorted(friendly_nest_tuples, key=lambda x:x[1])
+        return friendly_nest_tuples
+
+    def should_defender_attack_enemy(self, world, defender):
+        if defender.uuid not in self.defender_mapping:
+            return False, None
+
+        position_to_defend = self.defender_mapping[defender.uuid]
+        closest_enemy = world.get_closest_enemy_from(position_to_defend, None)
+        enemy_dist = world.get_shortest_path_distance(defender_position, closest_enemy.position)
+
+        if enemy_dist < self.defender_enemy_attack_threshold:
+            return True, closest_enemy
+        else:
+            return False, None
+
+    def do_defender_move(self, world, defender):
+        """
+
+        :param world:
+        :param defender: FriendlyUnit
+        :return:
+        """
+        if defender.uuid not in self.defender_mapping:
+            defender_position = defender.position
+            friendly_nest_tuples = self.get_closest_friendly_nests(world, defender_position)
+
+            assigned = False
+            for friendly_nest_tuple in friendly_nest_tuples:
+                friendly_nest_position = friendly_nest_tuple[0]
+                defense_points = self.defense_points[friendly_nest_position]
+                for defense_point in defense_points:
+                    if not assigned and defense_points[defense_point] is None:
+                        self.defense_points[friendly_nest_position] = defender.uuid
+                        self.defender_mapping[defender.uuid] = defense_point
+                        assigned = True
+
+            if not assigned:
+                closest_defender = self.defenders[0]
+                closest_dist = world.get_shortest_path_distance(defender_position, closest_defender.position)
+                for other_defender_uuid in self.defenders:
+                    other_defender = world.get_unit(other_defender_uuid)
+                    other_dist = world.get_shortest_path_distance(defender_position, other_defender.position)
+                    if other_dist < closest_dist:
+                        closest_defender = other_defender
+                        closest_dist = other_dist
+                world.move(defender, closest_defender.position)
+
+        should_defender_attack, enemy_unit = should_defender_attack(world, defender)
+        if should_defender_attack:
+            world.move(defender, enemy_unit.position)
+        else:
+            world.move(defender, self.defender_mapping[defender.uuid])
 
 
     def zz_move(self, world, unit, goal):
@@ -248,10 +311,33 @@ class PlayerAI:
         # Grow, become stronger
         # Take over the world
         move_count += 1
+        self.hunter_pair(world)
         for unit in friendly_units:
-            path = world.get_shortest_path(unit.position,
-                                           world.get_closest_capturable_tile_from(unit.position, None).position,
-                                           None)
+            if unit.last_move_result == MoveResult.NEWLY_MERGED:
+                parents = []
+                for other_unit_uuid in self.spawned:
+                    if unit.is_merged_with_unit(other_unit_uuid):
+                        parents.append(other_unit_uuid)
+
+                defender_count = 0
+                scout_count = 0
+                hunter_count = 0
+
+                for parent_uuid in parents:
+                    if parent_uuid in self.defenders:
+                        defender_count += 1
+                    elif parent_uuid in self.scouts:
+                        scout_count += 1
+                    elif hunter_uuid in self.hunters:
+                        hunter_count += 1
+
+                if defender_count >= scout_count and defender_count >= hunter_count:
+                    self.defenders.append(unit.uuid)
+                elif scout_count >= hunter_count and scout_count >= defender_count:
+                    self.scouts.append(unit.uuid)
+                else:
+                    self.hunters.append(unit.uuid)
+
             #assign a new firefly to a role
 
             if unit.uuid not in self.spawned:
@@ -266,7 +352,7 @@ class PlayerAI:
 
             if unit.uuid in self.spawned:
                 if unit.uuid in self.hunters:
-
+                    self.hunter_move(world, unit, self.hunter_nest_pair)
                 elif unit.uuid in self.scouts:
                     if not self.build_nest_point:
                         self.build_nest_point = self.find_build_point(unit)
@@ -282,11 +368,7 @@ class PlayerAI:
 
 
                 elif unit.uuid in self.defenders:
-
-
-
-            if path: world.move(unit, path[0])
-
+                    self.do_defender_move(world, unit)
 
 
 
