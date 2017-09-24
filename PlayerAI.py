@@ -33,6 +33,7 @@ class PlayerAI:
         self.steps = 0
         self.defender_mapping = {}
         self.defender_enemy_attack_threshold = 5
+        self.mid_game_threshold = 0.66
         self.scout_paths = {}
         self.past_mid = False;
 
@@ -68,7 +69,7 @@ class PlayerAI:
 
     def is_past_mid(self, world):
         # checks if a third of tiles are taken or if enemy gets close to nests
-        return len(world.get_neutral_tiles()) > 0.66 * 361
+        return len(world.get_neutral_tiles()) < 0.66 * 361
 
     def hunter_pair(self, world):
         # assigns a nest to each hunter
@@ -77,9 +78,10 @@ class PlayerAI:
 
         for hunter_uuid in self.hunters:
             hunter = world.get_unit(hunter_uuid)
-            closest_nest = world.get_closest_enemy_nest_from(hunter.position, set())
-            self.hunter_nest_pairs[hunter] = closest_nest
-            if closest_nest not in clusters and closest_nest in nests:
+            if hunter is not None:
+             closest_nest = world.get_closest_enemy_nest_from(hunter.position, set())
+             self.hunter_nest_pairs[hunter] = closest_nest
+             if closest_nest not in clusters and closest_nest in nests:
                 nests.remove(closest_nest)
 
     def hunter_move(self, world, unit, hunter_nest_pairs):
@@ -88,6 +90,14 @@ class PlayerAI:
         if unit.uuid in self.hunter_nest_pairs:
             next_point = world.get_next_point_in_shortest_path(self.hunter_nest_pairs[unit.uuid])
             world.move(unit, next_point)
+        else:
+            nest_to_attack = world.get_closest_enemy_nest_from(unit.position, set())
+            if nest_to_attack is None:
+                enemy_to_attack = world.get_closest_enemy_from(unit.position, set())
+                world.move(unit, enemy_to_attack.position)
+                return
+            world.move(unit, nest_to_attack.position)
+            return
 
     def nest_fitness(self, friendly_nest_distance, enemy_nest_distance, nesting_core_score, world):
         return (self.friendly_nest_distance_importance * -friendly_nest_distance +
@@ -262,11 +272,11 @@ class PlayerAI:
                     path_list.append(step)
 
                 self.scout_paths[unit.uuid] = path_list
-                
+
             if unit.uuid in self.scout_paths and self.scout_paths[unit.uuid] is not None:
                 world.move(unit, self.scout_paths[unit.uuid][0])
                 del self.scout_paths[unit.uuid][0]
-                
+
             else:
                 del self.scout_paths[unit.uuid]
                 capturable_tile = world.get_closest_capturable_tile(unit.position)
@@ -344,7 +354,7 @@ class PlayerAI:
                         defender_count += 1
                     elif parent_uuid in self.scouts:
                         scout_count += 1
-                    elif hunter_uuid in self.hunters:
+                    elif parent_uuid in self.hunters:
                         hunter_count += 1
 
                 if defender_count >= scout_count and defender_count >= hunter_count:
@@ -367,9 +377,13 @@ class PlayerAI:
 
             if unit.uuid in self.spawned:
                 if unit.uuid in self.hunters:
+                    print("running hunter")
                     self.hunter_move(world, unit, self.hunter_nest_pairs)
+
                 elif unit.uuid in self.scouts:
+                    print("running scout")
                     self.builder_scout(world, unit)
 
                 elif unit.uuid in self.defenders:
+                    print("running defender")
                     self.do_defender_move(world, unit)
