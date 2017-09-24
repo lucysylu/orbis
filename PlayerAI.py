@@ -5,7 +5,6 @@ from PythonClientAPI.Game.World import World
 
 
 class PlayerAI:
-
     def __init__(self):
         """
         Any instantiation code goes here
@@ -38,7 +37,7 @@ class PlayerAI:
         self.past_mid = False;
 
     def check_walls(self, world):
-        #check type of map, find nesting cores
+        # check type of map, find nesting cores
         x = world.get_width()
         y = world.get_height()
         wall_count = 0
@@ -64,47 +63,36 @@ class PlayerAI:
                 wall_count += 1
         if wall_count == 3:
             return True
-        else: return False
-
+        else:
+            return False
 
     def is_past_mid(self, world):
-        #checks if a third of tiles are taken or if enemy gets close to nests
-        x = world.get_width()
-        y = world.get_height()
-
-        tile_count = 0
-        for i in x:
-            for j in y:
-                point = (i, j)
-                if not point.is_neutral():
-                    tile_count += 1
-        if tile_count/(x * y) >= 0.33:
-            return True
-        else: return False
-
+        # checks if a third of tiles are taken or if enemy gets close to nests
+        return len(world.get_neutral_tiles()) > 0.66 * 361
 
     def hunter_pair(self, world):
-        #assigns a nest to each hunter
+        # assigns a nest to each hunter
         nests = world.get_enemy_nest_positions()
         clusters = world.get_enemy_nest_clusters()
 
-        for hunter in self.hunters:
-            closest_nest = world.get_closest_enemy_nest_from(hunter.position)
-            self.hunter_nest_pair[hunter] = closest_nest
-            if closest_nest not in clusters:
+        for hunter_uuid in self.hunters:
+            hunter = world.get_unit(hunter_uuid)
+            closest_nest = world.get_closest_enemy_nest_from(hunter.position, set())
+            self.hunter_nest_pairs[hunter] = closest_nest
+            if closest_nest not in clusters and closest_nest in nests:
                 nests.remove(closest_nest)
 
-
     def hunter_move(self, world, unit, hunter_nest_pairs):
-        #activates mid-game, goes straight for nests
+        # activates mid-game, goes straight for nests
         self.hunter_pair(world)
-        next_point = world.get_next_point_in_shortest_path(self.hunter_pair[unit.uuid])
-        world.move(unit, next_point)
+        if unit.uuid in self.hunter_nest_pairs:
+            next_point = world.get_next_point_in_shortest_path(self.hunter_nest_pairs[unit.uuid])
+            world.move(unit, next_point)
 
     def nest_fitness(self, friendly_nest_distance, enemy_nest_distance, nesting_core_score, world):
         return (self.friendly_nest_distance_importance * -friendly_nest_distance +
-            self.enemy_nest_distance_importance * enemy_nest_distance +
-            self.nest_core_importance * nesting_core_score)
+                self.enemy_nest_distance_importance * enemy_nest_distance +
+                self.nest_core_importance * nesting_core_score)
 
     def obtain_best_nest_points(self, world):
         friendly_nest_position = world.get_friendly_nest_positions()[0]
@@ -123,7 +111,7 @@ class PlayerAI:
                                                   enemy_distance,
                                                   nesting_core_score)))
 
-        best_nests = sorted(best_nests, key=lambda x:x(1))
+        best_nests = sorted(best_nests, key=lambda x: x(1))
         overall_best_nests = best_nests[0:self.goal_nests]
         best_nest_dict = {}
 
@@ -180,10 +168,10 @@ class PlayerAI:
             southeastern_point = self.get_southeastern_point(world, friendly_nest_position, neighbors)
 
             self.defense_points[friendly_nest_position] = {
-                northwestern_point:None,
-                northeastern_point:None,
-                southwestern_point:None,
-                southeastern_point:None
+                northwestern_point: None,
+                northeastern_point: None,
+                southwestern_point: None,
+                southeastern_point: None
             }
 
     def get_closest_friendly_nests(self, world, point):
@@ -193,7 +181,7 @@ class PlayerAI:
             dist = world.get_shortest_path_distance(point, position)
             friendly_nest_tuples.append((position, dist))
 
-        friendly_nest_tuples = sorted(friendly_nest_tuples, key=lambda x:x[1])
+        friendly_nest_tuples = sorted(friendly_nest_tuples, key=lambda x: x[1])
         return friendly_nest_tuples
 
     def should_defender_attack_enemy(self, world, defender):
@@ -202,7 +190,7 @@ class PlayerAI:
 
         position_to_defend = self.defender_mapping[defender.uuid]
         closest_enemy = world.get_closest_enemy_from(position_to_defend, None)
-        enemy_dist = world.get_shortest_path_distance(defender_position, closest_enemy.position)
+        enemy_dist = world.get_shortest_path_distance(position_to_defend, closest_enemy.position)
 
         if enemy_dist < self.defender_enemy_attack_threshold:
             return True, closest_enemy
@@ -216,6 +204,8 @@ class PlayerAI:
         :param defender: FriendlyUnit
         :return:
         """
+        self.obtain_defence_points(world)
+
         if defender.uuid not in self.defender_mapping:
             defender_position = defender.position
             friendly_nest_tuples = self.get_closest_friendly_nests(world, defender_position)
@@ -241,7 +231,7 @@ class PlayerAI:
                         closest_dist = other_dist
                 world.move(defender, closest_defender.position)
 
-        should_defender_attack, enemy_unit = should_defender_attack(world, defender)
+        should_defender_attack, enemy_unit = self.should_defender_attack_enemy(world, defender)
         if should_defender_attack:
             world.move(defender, enemy_unit.position)
         else:
@@ -259,20 +249,33 @@ class PlayerAI:
     def builder_scout(self, world, unit):
 
         build_point = self.find_build_point(world, unit)
+
         if build_point is not 0:
             if unit.uuid not in self.scout_paths:
-                closest = world.get_closest_point_from(unit.position, lambda point:build_point[1])
+                closest = world.get_closest_point_from(unit.position, lambda point: build_point[1])
                 path_list = world.get_shortest_path(unit.position, closest, build_point[0])
+                for step in world.get_shortest_path(unit.position, closest, build_point[1]):
+                    path_list.append(step)
+                for step in world.get_shortest_path(unit.position, closest, build_point[2]):
+                    path_list.append(step)
+                for step in world.get_shortest_path(unit.position, closest, build_point[3]):
+                    path_list.append(step)
+
                 self.scout_paths[unit.uuid] = path_list
+                
             if unit.uuid in self.scout_paths and self.scout_paths[unit.uuid] is not None:
                 world.move(unit, self.scout_paths[unit.uuid][0])
                 del self.scout_paths[unit.uuid][0]
+                
             else:
                 del self.scout_paths[unit.uuid]
-        else:
                 capturable_tile = world.get_closest_capturable_tile(unit.position)
                 next_point = world.get_next_point_in_shortest_path(unit.position, capturable_tile)
                 world.move(unit, next_point)
+        else:
+            capturable_tile = world.get_closest_capturable_tile(unit.position)
+            next_point = world.get_next_point_in_shortest_path(unit.position, capturable_tile)
+            world.move(unit, next_point)
 
     def find_build_point(self, world, unit):
         self.potential_nest_list = self.obtain_best_nest_points()
@@ -288,14 +291,14 @@ class PlayerAI:
             return 0
 
     def find_friendlies(self, world, friendly_units):
-        #return a set of friendly positions
+        # return a set of friendly positions
         friendly_pos = set()
         for unit in friendly_units:
             friendly_pos.add(unit.position)
         return friendly_pos
 
     def find_enemies(self, world, enemy_units):
-        #return a set of enemy positions
+        # return a set of enemy positions
         enemy_pos = set()
         for unit in enemy_units:
             enemy_pos.add(unit.position)
@@ -304,7 +307,7 @@ class PlayerAI:
     def do_move(self, world, friendly_units, enemy_units):
         """
         This method will get called every turn.
-        
+
         :param world: World object reflecting current game state
         :param friendly_units: list of FriendlyUnit objects
         :param enemy_units: list of EnemyUnit objects
@@ -313,17 +316,17 @@ class PlayerAI:
         # Build thou nests
         # Grow, become stronger
         # Take over the world
-        move_count += 1
+        self.move_count += 1
         self.hunter_pair(world)
 
         if not self.past_mid:
             self.past_mid = self.is_past_mid(world)
             if self.past_mid:
-                to_hunter = self.scouts[:len(self.scouts)//2]
+                to_hunter = self.scouts[:len(self.scouts) // 2]
                 for hunter in to_hunter:
                     self.hunters.append(hunter)
 
-                del self.scouts[:len(self.scouts)//2]
+                del self.scouts[:len(self.scouts) // 2]
 
         for unit in friendly_units:
             if unit.last_move_result == MoveResult.NEWLY_MERGED:
@@ -351,7 +354,7 @@ class PlayerAI:
                 else:
                     self.hunters.append(unit.uuid)
 
-            #assign a new firefly to a role
+            # assign a new firefly to a role
 
             if unit.uuid not in self.spawned:
                 if not self.is_past_mid and self.move_count % 2 == 0:
@@ -364,14 +367,9 @@ class PlayerAI:
 
             if unit.uuid in self.spawned:
                 if unit.uuid in self.hunters:
-                    self.hunter_move(world, unit, self.hunter_nest_pair)
+                    self.hunter_move(world, unit, self.hunter_nest_pairs)
                 elif unit.uuid in self.scouts:
                     self.builder_scout(world, unit)
 
                 elif unit.uuid in self.defenders:
                     self.do_defender_move(world, unit)
-
-
-
-
-
