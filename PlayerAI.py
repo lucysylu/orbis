@@ -3,6 +3,7 @@ from PythonClientAPI.Game.Entities import FriendlyUnit, EnemyUnit, Tile
 from PythonClientAPI.Game.Enums import Direction, MoveType, MoveResult
 from PythonClientAPI.Game.World import World
 
+
 class PlayerAI:
 
     def __init__(self):
@@ -27,12 +28,14 @@ class PlayerAI:
         self.target_nests = {}
         self.defense_points = {}
         self.builder_count = 0
-        self.nest_build_point;
+        self.potential_nest_list = [];
         self.straight_builders = []
         self.zz_builders = []
         self.steps = 0
         self.defender_mapping = {}
         self.defender_enemy_attack_threshold = 5
+        self.scout_paths = {}
+        self.past_mid = False;
 
     def check_walls(self, world):
         #check type of map, find nesting cores
@@ -244,45 +247,45 @@ class PlayerAI:
         else:
             world.move(defender, self.defender_mapping[defender.uuid])
 
-
-    def zz_move(self, world, unit, goal):
-        next = world.get_next_point_in_shortest_path(unit.position, goal)
-        if next[0] < unit.position[0]:
-            a = -1
-        elif next[0] > unit.position[0]:
-            a = 1
-        else: a = 0
-
-        if next[1] < unit.position[1]:
-            b = -1
-        elif next[1] > unit.position[1]:
-            b = 1
-        else:
-            b = 0
-
-        if steps == 0:
-            world.move(unit, next)
-        elif steps == 1:
-            world.move(unit, ())
-
-
-
-
-
     def scout_move(self, world, unit):
 
         nests = world.get_friendly_nest_positions()
         if not self.is_past_mid:
             if len(nests) < self.goal_nests and self.builder_count < self.goal_nests:
                 self.builder_count += 1
-                builder_scout(world, unit)
-            else:
+                self.builder_scout(world, unit)
 
+
+    def builder_scout(self, world, unit):
+
+        build_point = self.find_build_point(world, unit)
+        if build_point is not 0:
+            if unit.uuid not in self.scout_paths:
+                closest = world.get_closest_point_from(unit.position, lambda point:build_point[1])
+                path_list = world.get_shortest_path(unit.position, closest, build_point[0])
+                self.scout_paths[unit.uuid] = path_list
+            elif self.scout_paths[unit.uuid] is not None:
+                world.move(unit, self.scout_paths[unit.uuid][0])
+                del self.scout_paths[unit.uuid][0]
+            else:
+                del self.scout_paths[unit.uuid]
+        else:
+                capturable_tile = world.get_closest_capturable_tile(unit.position)
+                next_point = world.get_next_point_in_shortest_path(unit.position, capturable_tile)
+                world.move(unit, next_point)
 
     def find_build_point(self, world, unit):
-        best_nests = self.obtain_best_nest_points()
-        closest = world.get_closest_point_from(unit.position, lambda nest: nest in best_nests)
-        return closest
+        self.potential_nest_list = self.obtain_best_nest_points()
+        for nest in self.potential_nest_list.keys:
+            if not nest.is_neutral():
+                del self.potential_nest_list[nest]
+
+        if len(self.potential_nest_list) is not 0:
+            closest = world.get_closest_point_from(unit.position, lambda nest: nest in self.potential_nest_list)
+            neighbours = self.potential_nest_list[closest]
+            return (closest, neighbours)
+        else:
+            return 0
 
     def find_friendlies(self, world, friendly_units):
         #return a set of friendly positions
@@ -312,6 +315,17 @@ class PlayerAI:
         # Take over the world
         move_count += 1
         self.hunter_pair(world)
+
+        if not self.past_mid:
+            self.past_mid = self.is_past_mid(world)
+            if self.past_mid:
+                to_hunter = self.scouts[:len(self.scouts)//2]
+                for hunter in to_hunter:
+                    self.hunters.append(hunter)
+
+                del self.scouts[:len(self.scouts)//2]
+
+
         for unit in friendly_units:
             if unit.last_move_result == MoveResult.NEWLY_MERGED:
                 parents = []
@@ -341,10 +355,9 @@ class PlayerAI:
             #assign a new firefly to a role
 
             if unit.uuid not in self.spawned:
-                #TODO: Add code for checking if merged
-                if (not self.is_past_mid and self.move_count % 2 == 0):
+                if not self.is_past_mid and self.move_count % 2 == 0:
                     self.scouts.append(unit.uuid)
-                elif (self.is_past_mid and self.move_count % 2 == 0):
+                elif self.is_past_mid and self.move_count % 2 == 0:
                     self.hunters.append(unit.uuid)
                 else:
                     self.defenders.append(unit.uuid)
@@ -354,17 +367,14 @@ class PlayerAI:
                 if unit.uuid in self.hunters:
                     self.hunter_move(world, unit, self.hunter_nest_pair)
                 elif unit.uuid in self.scouts:
-                    if not self.build_nest_point:
-                        self.build_nest_point = self.find_build_point(unit)
+
                     if unit.uuid not in (self.straight_builders or self.zz_builders):
                         if self.move_count % 3 == 0:
                             self.straight_builders.append(unit.uuid)
                         elif move_count % 3 == 1 or move_count % 3 == 2:
                             self.zz_builders.append(unit.uuid)
-                    if self.build_nest_point:
 
-                    if unit.uuid in self.straight_builders:
-                        world.move(world.get_next_point_in_shortest_path(unit.position, build_next_point))
+
 
 
                 elif unit.uuid in self.defenders:
