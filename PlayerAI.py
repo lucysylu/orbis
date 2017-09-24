@@ -247,14 +247,14 @@ class PlayerAI:
         else:
             world.move(defender, self.defender_mapping[defender.uuid])
 
-    def scout_move(self, world, unit):
-
-        nests = world.get_friendly_nest_positions()
-        if not self.is_past_mid:
-            if len(nests) < self.goal_nests and self.builder_count < self.goal_nests:
-                self.builder_count += 1
-                self.builder_scout(world, unit)
-
+    # def scout_move(self, world, unit):
+    #
+    #     nests = world.get_friendly_nest_positions()
+    #     if not self.is_past_mid:
+    #         if len(nests) < self.goal_nests and self.builder_count < self.goal_nests * 2:
+    #             self.builder_count += 1
+    #             self.builder_scout(world, unit)
+    #
 
     def builder_scout(self, world, unit):
 
@@ -264,7 +264,7 @@ class PlayerAI:
                 closest = world.get_closest_point_from(unit.position, lambda point:build_point[1])
                 path_list = world.get_shortest_path(unit.position, closest, build_point[0])
                 self.scout_paths[unit.uuid] = path_list
-            elif self.scout_paths[unit.uuid] is not None:
+            if unit.uuid in self.scout_paths and self.scout_paths[unit.uuid] is not None:
                 world.move(unit, self.scout_paths[unit.uuid][0])
                 del self.scout_paths[unit.uuid][0]
             else:
@@ -367,15 +367,7 @@ class PlayerAI:
                 if unit.uuid in self.hunters:
                     self.hunter_move(world, unit, self.hunter_nest_pair)
                 elif unit.uuid in self.scouts:
-
-                    if unit.uuid not in (self.straight_builders or self.zz_builders):
-                        if self.move_count % 3 == 0:
-                            self.straight_builders.append(unit.uuid)
-                        elif move_count % 3 == 1 or move_count % 3 == 2:
-                            self.zz_builders.append(unit.uuid)
-
-
-
+                    self.builder_scout(world, unit)
 
                 elif unit.uuid in self.defenders:
                     self.do_defender_move(world, unit)
